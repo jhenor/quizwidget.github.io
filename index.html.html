@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interactive Quiz Widget</title>
+<style>
+:root{--accent:#6C5CE7;--muted:#9aa6b2}
+body{font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:linear-gradient(180deg,#071029 0%, #0b1220 100%);color:#e6eef6;margin:0;height:100%}
+.launch{position:fixed;right:24px;bottom:24px;background:linear-gradient(135deg,var(--accent),#4f46e5);border:none;color:white;padding:14px 18px;border-radius:14px;cursor:pointer;font-weight:600}
+.panel{position:fixed;left:12px;right:12px;bottom:-100%;height:72vh;background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));backdrop-filter:blur(6px);border-radius:16px;padding:18px;transition:bottom .48s;display:flex;flex-direction:column}
+.panel.active{bottom:24px;background: #0b1220;}
+.panel-header{display:flex;align-items:center;justify-content:space-between}
+.title{font-size:18px;font-weight:700}
+.content{flex:1;margin-top:12px;display:flex;flex-direction:column;gap:12px}
+.card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:14px;border-radius:12px}
+.question{font-size:16px;font-weight:600}
+.options{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.option{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);cursor:pointer;user-select:none}
+.option:hover{transform:translateY(-3px);transition:transform .15s}
+.option.selected{outline:2px solid rgba(108,92,231,.18);background:rgba(108,92,231,.06)}
+input[type='text'],input[type='email'],textarea{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+.controls{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:9px 12px;border-radius:10px;color:inherit;cursor:pointer}
+.btn.primary{background:var(--accent);border:none;color:white}
+.progress-wrap{height:10px;background:rgba(255,255,255,0.03);border-radius:999px;overflow:hidden}
+.progress{height:100%;width:0%;background:linear-gradient(90deg,#7c6cff,#4f46e5);transition:width .36s}
+.final{display:flex;flex-direction:column;gap:10px}
+label{font-size:13px;color:var(--muted)}
+@media(min-width:900px){.panel{left:calc(50% - 420px);right:calc(50% - 420px);height:66vh}}
+</style>
+</head>
+<body>
+
+<button class="launch" id="openQuiz">Take Quick Quiz</button>
+
+<aside class="panel" id="quizPanel" aria-hidden="true">
+  <div class="panel-header">
+    <div class="title">Quiz — Quick Pulse</div>
+    <button class="btn" id="closeBtn">Close</button>
+  </div>
+  <div class="content">
+    <div id="quizArea" class="card"></div>
+    <div class="card" style="padding:10px">
+      <div class="progress-wrap"><div id="progress" class="progress"></div></div>
+      <div class="controls" style="margin-top:10px">
+        <button class="btn" id="prevBtn">Back</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="skipBtn">Skip</button>
+          <button class="btn primary" id="nextBtn">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<script>
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZMpf4PgGdKh6FDVz2JnU_0CUbCeSc5_Hv_VbDJ8nnJ3M9H32Ey5lweO0gbT9z4b-LcA/exec'; // replace with your Web App URL
+
+const questions = [
+  {id:1,type:'mc',q:'Which color feels most energetic?',options:['Red','Blue','Green','Purple'],answer:2},
+  {id:2,type:'tf',q:'True or False: I like mornings.',options:['True','False'],answer:0},
+  {id:3,type:'mc',q:'Pick a hobby:',options:['Gaming','Reading','Sports','Cooking'],answer:1},
+  {id:4,type:'text',q:'Describe your mood in one word',placeholder:'Type here...'},
+  {id:5,type:'mc',q:'Choose a snack:',options:['Chips','Fruit','Chocolate','Nuts'],answer:3}
+];
+
+let idx = 0, answers = Array(questions.length).fill(null), score = 0;
+const panel = document.getElementById('quizPanel');
+const openBtn = document.getElementById('openQuiz');
+const closeBtn = document.getElementById('closeBtn');
+const quizArea = document.getElementById('quizArea');
+const nextBtn = document.getElementById('nextBtn');
+const prevBtn = document.getElementById('prevBtn');
+const skipBtn = document.getElementById('skipBtn');
+const progressEl = document.getElementById('progress');
+
+function renderQuestion(i) {
+  const q = questions[i];
+  quizArea.innerHTML = '';
+  const qText = document.createElement('div');
+  qText.className = 'question';
+  qText.textContent = (i+1)+'. '+q.q;
+  quizArea.appendChild(qText);
+
+  const options = document.createElement('div');
+  options.className = 'options';
+
+  if (q.type === 'mc' || q.type === 'tf') {
+    q.options.forEach((opt, oi)=>{
+      const o = document.createElement('div');
+      o.className = 'option';
+      o.textContent = opt;
+      o.dataset.opt = oi;
+      if (answers[i] === oi) o.classList.add('selected');
+      o.addEventListener('click', ()=>{ answers[i]=oi; markSelection(options,oi); updateScore(); });
+      options.appendChild(o);
+    });
+  } else if (q.type === 'text') {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = q.placeholder || '';
+    inp.value = answers[i] || '';
+    inp.addEventListener('input', e => answers[i] = e.target.value);
+    options.appendChild(inp);
+  }
+
+  quizArea.appendChild(options);
+  prevBtn.disabled = i===0;
+  nextBtn.textContent = (i===questions.length-1) ? 'Finish' : 'Next';
+  progressEl.style.width = (i/questions.length*100) + '%';
+}
+
+function markSelection(container,index){
+  const opts = container.querySelectorAll('.option');
+  opts.forEach(o => o.classList.toggle('selected', o.dataset.opt == index));
+}
+
+function updateScore(){
+  score = 0;
+  questions.forEach((q, ix)=>{
+    if ((q.type==='mc'||q.type==='tf') && answers[ix] === q.answer) score++;
+  });
+}
+
+nextBtn.addEventListener('click', ()=>{
+  if (idx < questions.length-1) { idx++; renderQuestion(idx); }
+  else { showFinal(); }
+});
+
+prevBtn.addEventListener('click', ()=>{ if(idx>0){ idx--; renderQuestion(idx); } });
+skipBtn.addEventListener('click', ()=>{ answers[idx]=null; if(idx<questions.length-1){ idx++; renderQuestion(idx); } });
+
+function showFinal(){
+  quizArea.innerHTML = '';
+  const f = document.createElement('div');
+  f.className = 'final';
+  const heading = document.createElement('div');
+  heading.className = 'question';
+  heading.textContent = 'All done! Drop your details to save results.';
+
+  const form = document.createElement('form');
+  form.id = 'finalForm';
+  form.innerHTML = `
+    <label>Name<input name="name" required type="text"/></label>
+    <label>Email<input name="email" required type="email"/></label>
+    <label>Anything to share?<textarea name="freeText" placeholder="Tell us something..."></textarea></label>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button type="submit" class="btn primary">Submit</button>
+      <button type="button" class="btn" id="editBtn">Edit answers</button>
+    </div>
+  `;
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = {
+      name: fd.get('name'),
+      email: fd.get('email'),
+      freeText: fd.get('freeText'),
+      answers,
+      score,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      // Using a hidden iframe trick to bypass CORS (no JSON reading)
+      const iframe = document.createElement('iframe');
+      iframe.style.display='none';
+      iframe.src = GOOGLE_SCRIPT_URL + '?data=' + encodeURIComponent(JSON.stringify(payload));
+      document.body.appendChild(iframe);
+      alert('Submitted! Check your Google Sheet.');
+      panel.classList.remove('active');
+      idx = 0; answers = Array(questions.length).fill(null); score = 0;
+      renderQuestion(idx);
+
+    } catch(err){
+      alert('Submission failed. Check console.');
+      console.error(err);
+    }
+  });
+
+  f.appendChild(heading);
+  f.appendChild(form);
+  quizArea.appendChild(f);
+
+  document.getElementById('editBtn').addEventListener('click', ()=>{ idx=0; renderQuestion(idx); });
+}
+
+// Panel controls
+openBtn.addEventListener('click', ()=>{ panel.classList.add('active'); panel.setAttribute('aria-hidden','false'); renderQuestion(idx); });
+closeBtn.addEventListener('click', ()=>{ panel.classList.remove('active'); panel.setAttribute('aria-hidden','true'); });
+
+// Initialize
+renderQuestion(0);
+</script>
+</body>
+</html>
